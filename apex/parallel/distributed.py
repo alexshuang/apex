@@ -7,6 +7,7 @@ from itertools import chain
 import copy
 import importlib
 from ..multi_tensor_apply import multi_tensor_applier
+import pdb
 
 imported_flatten_impl = False
 
@@ -250,8 +251,10 @@ class DistributedDataParallel(Module):
             self._overflow_buf = torch.cuda.IntTensor([0])
 
         self.create_hooks()
+        print(f"length of grad_accs: {len(self.grad_accs)}")
 
-        flat_dist_call([param.data for param in self.module.parameters()], dist.broadcast, (0,) )
+        param_list = [param.data for param in self.module.parameters()]
+        flat_dist_call(param_list, dist.broadcast, (0,) )
 
 
     def __setstate__(self, state):
@@ -290,6 +293,7 @@ class DistributedDataParallel(Module):
         self.num_buckets = len(self.active_i_buckets)
         self.bucket_sizes = [len(bucket) for bucket in self.active_i_buckets]
 
+        print(f"active_i_buckets: {len(list(chain(*self.active_i_buckets)))}")
         info_tensor = torch.cuda.IntTensor([self.num_buckets] +
                                            self.bucket_sizes +
                                            list(chain(*self.active_i_buckets)))
@@ -324,6 +328,7 @@ class DistributedDataParallel(Module):
         # iterations.
         def allreduce_params():
             # Bucket record refresh
+            print("###### hello")
             if not self.delay_allreduce:
                 if self.needs_refresh:
                     self.sync_bucket_structure()
@@ -334,6 +339,7 @@ class DistributedDataParallel(Module):
 
 
         def overlapping_backward_epilogue():
+            print("overlapping_backward_epilogue")
             for stream, event in zip(self.bucket_streams, self.bucket_events):
                 stream.record_event(event)
                 torch.cuda.current_stream().wait_event(event)
@@ -368,6 +374,7 @@ class DistributedDataParallel(Module):
                                 if not self.delay_allreduce and self.needs_refresh:
                                     # Use the backward pass to build the bucket structure on the fly.
                                     active_i = self.param_id_to_active_i[id(param)]
+                                    print(f"active_i: {active_i}")
 
                                     # Float, half, and double tensors are grouped into buckets separately.
                                     current_type = self.param_type_to_tmp_i[param.type()]
@@ -398,6 +405,7 @@ class DistributedDataParallel(Module):
                                     Variable._execution_engine.queue_callback(overlapping_backward_epilogue)
                                     self.callback_queued = True
 
+                                print("comm_ready_buckets")
                                 self.comm_ready_buckets(param)
 
                         if self.prof:
@@ -457,8 +465,11 @@ class DistributedDataParallel(Module):
             if self.allreduce_always_fp32 and tensor is not tensor_to_allreduce:
                 tensor.copy_(tensor_to_allreduce)
 
+            print(f"self.retain_allreduce_buffers: {self.retain_allreduce_buffers}")
+
             if not self.retain_allreduce_buffers:
                 if multi_tensor_applier.available:
+                    print(f"multi_tensor_applier.available: {multi_tensor_applier.available}")
                     multi_tensor_applier(
                         self.multi_tensor_scale,
                         self._overflow_buf,
@@ -477,8 +488,10 @@ class DistributedDataParallel(Module):
 
 
     def allreduce_maybe_retain(self, bucket, bucket_idx, force_default_stream=False):
+        print("allreduce_maybe_retain")
         allreduced = self.allreduce_bucket(bucket, bucket_idx, force_default_stream)
         if self.retain_allreduce_buffers:
+            print("retain_allreduce_buffers")
             if self.allreduce_buffers[bucket_idx] is not None:
                 raise RuntimeError("The backward pass is attempting to replace an already-filled "
                                    "allreduce buffer.  This is almost certainly an error.")
@@ -559,6 +572,7 @@ class DistributedDataParallel(Module):
 
     def forward(self, *inputs, **kwargs):
         result = self.module(*inputs, **kwargs)
+        pdb.set_trace()
 
         if self.prof:
             torch.cuda.nvtx.range_push("forward pass DDP logic")
