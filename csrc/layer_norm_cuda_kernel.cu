@@ -17,9 +17,8 @@ void cuWelfordOnlineSum(
 {
   count = count + U(1);
   U delta = curr - mu;
-  U lmean = mu + delta / count;
-  mu = lmean;
-  U delta2 = curr - lmean;
+  mu += delta / count;
+  U delta2 = curr - mu;
   sigma2 = sigma2 + delta * delta2;
 }
 
@@ -35,13 +34,11 @@ void cuChanOnlineSum(
   U delta = muB - mu;
   U nA = count;
   U nB = countB;
-  count = count + countB;
-  U nX = count;
-  if (nX > U(0)) {
-    nA = nA / nX;
-    nB = nB / nX;
-    mu = nA*mu + nB*muB;
-    sigma2 = sigma2 + sigma2B + delta * delta * nA * nB * nX;
+  count += nB;
+  if (count > U(0)) {
+    nB /= count;
+    mu = mu + delta * nB;
+    sigma2 = sigma2 + sigma2B + delta * delta * nA * nB;
   } else {
     mu = U(0);
     sigma2 = U(0);
